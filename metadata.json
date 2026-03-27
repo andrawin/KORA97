@@ -1,5 +1,5 @@
 {
-  "name": "Audio Reactive Robot",
+  "name": "KORA-97",
   "description": "An audio-reactive robot face that responds to microphone input, with support for custom uploaded illustrations.",
   "requestFramePermissions": [
     "microphone"

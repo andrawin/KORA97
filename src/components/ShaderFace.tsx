@@ -14,6 +14,7 @@ const fragmentShaderSource = `
   uniform float     iTime;
   uniform float     iAudioVolume;
   uniform vec4      iMouse;
+  uniform float     u_zoomReactivity;
 
   float time;
   float matID = 0.0;
@@ -42,6 +43,15 @@ const fragmentShaderSource = `
       float d = 1e4;
       float m = 0.0;
       
+      // --- JUPITER PLANET (Background) ---
+      // Positioned far away in the background
+      vec3 jupiterP = p - vec3(-15.0, 8.0, -40.0);
+      float jupiter = length(jupiterP) - 12.0;
+      if (jupiter < d) {
+          d = jupiter;
+          m = 5.0; // Jupiter material
+      }
+
       // Slight idle animation + Audio reactive head swing
       float audioSwing = iAudioVolume * 0.25 * sin(time * 12.0);
       float audioNod = iAudioVolume * 0.2 * cos(time * 8.0);
@@ -67,6 +77,15 @@ const fragmentShaderSource = `
       // --- FACE (Skin) ---
       float face = length(headP * vec3(1.0, 0.9, 1.05)) - 0.38;
       
+      // Forehead / Brow (Audio reactive furrow)
+      float browDrop = iAudioVolume * 0.08;
+      vec3 browP = headP - vec3(0.0, 0.18 - browDrop, 0.34);
+      browP.x = abs(browP.x);
+      browP -= vec3(0.14, 0.0, 0.0);
+      browP.xy *= rotmat(-0.1 + iAudioVolume * 0.4);
+      float brow = length(browP * vec3(1.5, 2.5, 1.0)) - 0.05;
+      face = smin(face, brow, 0.06);
+
       // Nose
       vec3 noseP = headP - vec3(0.0, -0.05, 0.38);
       float nose = length(noseP * vec3(2.0, 1.0, 1.0)) - 0.08;
@@ -100,11 +119,16 @@ const fragmentShaderSource = `
       if (lips < d) { d = lips; m = 2.0; }
 
       // --- EYES ---
-      vec3 eyeP = headP - vec3(0.0, 0.08, 0.34);
+      // Audio reactive eye movement (darting) and squinting
+      float eyeLookX = sin(time * 8.0) * 0.015 * iAudioVolume;
+      float eyeLookY = cos(time * 5.0) * 0.01 * iAudioVolume;
+      float eyeSquint = iAudioVolume * 3.0; // Eyes narrow when loud
+      
+      vec3 eyeP = headP - vec3(eyeLookX, 0.08 + eyeLookY, 0.34);
       eyeP.x = abs(eyeP.x);
       eyeP -= vec3(0.16, 0.0, 0.0);
       eyeP.xy *= rotmat(-0.1);
-      float eye = length(eyeP * vec3(1.0, 3.0, 1.0)) - 0.035;
+      float eye = length(eyeP * vec3(1.0, 3.0 + eyeSquint, 1.0)) - 0.035;
       if (eye < d) { d = eye; m = 3.0; }
 
       // --- EARS (Chrome) ---
@@ -172,8 +196,9 @@ const fragmentShaderSource = `
       uv.x *= iResolution.x / iResolution.y;
       time = iTime;
 
-      // Camera (Zoomed in on face)
-      vec3 ro = vec3(0.0, 1.4, 1.1);
+      // Camera (Zoomed in on face, with audio reactivity)
+      float zoomOffset = iAudioVolume * u_zoomReactivity * 0.5;
+      vec3 ro = vec3(0.0, 1.4, 1.1 - zoomOffset);
       
       // Mouse rotation
       if (iMouse.z > 0.0) {
@@ -194,15 +219,15 @@ const fragmentShaderSource = `
 
       // Raymarching
       float t = 0.0, d = 0.0;
-      for(int i = 0; i < 100; ++i) {
+      for(int i = 0; i < 150; ++i) {
           vec3 p = ro + rd * t;
           d = f(p);
-          if(d < 1e-3 || t > 10.0) break;
+          if(d < 1e-3 || t > 100.0) break;
           t += d;
       }
 
-      // Background (gradient + pointcloud)
-      vec3 col = mix(vec3(0.15, 0.15, 0.15), vec3(0.02, 0.02, 0.02), length(uv) * 0.5);
+      // Background (Solid Black)
+      vec3 col = vec3(0.0);
       
       float pc = 0.0;
       vec2 pcUv = uv;
@@ -228,7 +253,7 @@ const fragmentShaderSource = `
       }
       col += vec3(0.2, 0.6, 1.0) * pc * 0.8;
 
-      if(t < 10.0) {
+      if(t < 100.0) {
           vec3 rp = ro + rd * t;
           vec3 n = sceneNorm(rp);
           vec3 r = reflect(rd, n);
@@ -247,7 +272,7 @@ const fragmentShaderSource = `
               col += vec3(1.0) * fre * 0.5;
           } else if (m == 1.0) {
               // Skin
-              vec3 skinColor = vec3(0.9, 0.75, 0.65);
+              vec3 skinColor = vec3(0.75, 0.55, 0.42); // Tan / Southeast Asian skin tone
               col = skinColor * (diff * 0.7 + 0.3);
               col += vec3(1.0) * spec * 0.1; // Slight skin specularity
           } else if (m == 2.0) {
@@ -263,6 +288,21 @@ const fragmentShaderSource = `
           } else if (m == 4.0) {
               // Dark (Neck grooves, mouth cavity)
               col = vec3(0.02);
+          } else if (m == 5.0) {
+              // Jupiter Planet
+              // Base color
+              vec3 jupColor = vec3(0.8, 0.5, 0.3);
+              // Add bands using sine waves based on local Y position
+              // We need to reconstruct local Y. Since it's far away, rp.y is a good approximation
+              float bands = sin(rp.y * 1.5) * 0.5 + 0.5;
+              float bands2 = sin(rp.y * 4.0 + sin(rp.x * 0.5)) * 0.5 + 0.5;
+              jupColor = mix(jupColor, vec3(0.6, 0.3, 0.1), bands * 0.6);
+              jupColor = mix(jupColor, vec3(0.9, 0.7, 0.5), bands2 * 0.4);
+              
+              col = jupColor * (diff * 0.8 + 0.2);
+              // Add a slight atmospheric glow at the edges
+              float fre = pow(clamp(1.0 - dot(n, -rd), 0.0, 1.0), 4.0);
+              col += vec3(0.9, 0.6, 0.3) * fre * 0.5;
           }
           
           // Ambient occlusion (fake)
@@ -279,9 +319,10 @@ const fragmentShaderSource = `
 
 interface ShaderFaceProps {
   volume: number;
+  zoomReactivity?: number;
 }
 
-export const ShaderFace: React.FC<ShaderFaceProps> = ({ volume }) => {
+export const ShaderFace: React.FC<ShaderFaceProps> = ({ volume, zoomReactivity = 0.5 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const glRef = useRef<WebGLRenderingContext | null>(null);
   const programRef = useRef<WebGLProgram | null>(null);
@@ -413,9 +454,11 @@ export const ShaderFace: React.FC<ShaderFaceProps> = ({ volume }) => {
       const gl = glRef.current;
       gl.useProgram(programRef.current);
       const iAudioVolumeLoc = gl.getUniformLocation(programRef.current, 'iAudioVolume');
+      const uZoomReactivityLoc = gl.getUniformLocation(programRef.current, 'u_zoomReactivity');
       gl.uniform1f(iAudioVolumeLoc, volume);
+      gl.uniform1f(uZoomReactivityLoc, zoomReactivity);
     }
-  }, [volume]);
+  }, [volume, zoomReactivity]);
 
   return (
     <canvas 

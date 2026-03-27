@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 
-export function HUD({ volume }: { volume: number }) {
+export function HUD({ volume, transcript }: { volume: number, transcript?: string }) {
   const [pcCount, setPcCount] = useState(0);
   const [hexCode, setHexCode] = useState('0x0000');
   const [scanline, setScanline] = useState(0);
@@ -125,6 +125,15 @@ export function HUD({ volume }: { volume: number }) {
           <div className="text-cyan-300 font-mono text-xl tracking-wider animate-pulse">ONLINE</div>
         </div>
       </div>
+
+      {/* Subtitles / Transcript */}
+      {transcript && (
+        <div className="absolute bottom-12 left-1/2 -translate-x-1/2 w-3/4 max-w-2xl text-center">
+          <p className="text-white text-xl md:text-2xl font-medium tracking-wide drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)] bg-black/40 px-6 py-3 rounded-lg inline-block backdrop-blur-sm border border-white/10">
+            {transcript}
+          </p>
+        </div>
+      )}
 
       {/* Top/Bottom decorative elements */}
       <div className="absolute top-4 left-1/2 -translate-x-1/2 flex gap-2">

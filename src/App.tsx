@@ -7,26 +7,18 @@ import { HUD } from './components/HUD';
 import { Mic, MicOff, Image as ImageIcon, Cpu, Layers, Box, Settings, ChevronDown } from 'lucide-react';
 
 export default function App() {
-  const { volume, isListening, startListening, stopListening } = useAudioVolume();
+  const { volume, isListening, startListening, stopListening, transcript } = useAudioVolume();
   const [mode, setMode] = useState<'custom' | 'sequence' | 'shader'>('shader');
   const [showSettings, setShowSettings] = useState(false);
   const [reactivity, setReactivity] = useState(1.0);
+  const [zoomReactivity, setZoomReactivity] = useState(0.5);
   
   const effectiveVolume = volume * reactivity;
 
   return (
     <div className="min-h-screen bg-gray-950 text-gray-100 flex flex-col font-sans selection:bg-pink-500/30">
       {/* Header */}
-      <header className="flex items-center justify-between px-6 py-4 border-b border-gray-800 bg-gray-900/50 backdrop-blur-md sticky top-0 z-50">
-        <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-full bg-gradient-to-br from-pink-500 to-violet-600 flex items-center justify-center shadow-lg shadow-pink-500/20">
-            <Cpu className="w-4 h-4 text-white" />
-          </div>
-          <h1 className="text-xl font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-gray-100 to-gray-400">
-            KORA-97
-          </h1>
-        </div>
-        
+      <header className="flex items-center justify-end px-6 py-4 border-b border-gray-800 bg-gray-900/50 backdrop-blur-md sticky top-0 z-50">
         <div className="flex items-center gap-4">
           {/* Settings Dropdown */}
           <div className="relative">
@@ -90,6 +82,21 @@ export default function App() {
                     className="w-full accent-cyan-500"
                   />
                 </div>
+
+                {/* Zoom Reactivity Slider */}
+                <div>
+                  <label className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3 flex justify-between">
+                    <span>Zoom Reactivity</span>
+                    <span className="text-cyan-400">{zoomReactivity.toFixed(1)}x</span>
+                  </label>
+                  <input 
+                    type="range" 
+                    min="0.0" max="2.0" step="0.1" 
+                    value={zoomReactivity} 
+                    onChange={(e) => setZoomReactivity(parseFloat(e.target.value))}
+                    className="w-full accent-cyan-500"
+                  />
+                </div>
               </div>
             )}
           </div>
@@ -130,8 +137,19 @@ export default function App() {
 
         <div className="w-full max-w-4xl h-[600px] flex items-center justify-center relative z-10">
           
+          {/* TV Station Logo */}
+          <img 
+            src="https://drive.google.com/thumbnail?id=1OX1Sldz1IMLq1t1krJq4_iTu0gG2u05h&sz=w800" 
+            alt="KORA-97 Logo" 
+            className="absolute top-6 right-6 w-36 h-auto z-40 opacity-80 pointer-events-none drop-shadow-[0_0_10px_rgba(34,211,238,0.5)]"
+            onError={(e) => {
+              // Fallback if the direct image link fails
+              (e.target as HTMLImageElement).style.display = 'none';
+            }}
+          />
+
           {/* HUD Overlay */}
-          {isListening && <HUD volume={effectiveVolume} />}
+          {isListening && <HUD volume={effectiveVolume} transcript={transcript} />}
 
           {!isListening && (
             <div className="absolute inset-0 flex items-center justify-center z-30 bg-gray-950/60 backdrop-blur-sm rounded-2xl border border-gray-800">
@@ -155,7 +173,7 @@ export default function App() {
           )}
 
           <div className={`w-full h-full transition-all duration-500 ${isListening ? 'opacity-100 scale-100' : 'opacity-50 scale-95 blur-sm'}`}>
-            {mode === 'shader' && <ShaderFace volume={effectiveVolume} />}
+            {mode === 'shader' && <ShaderFace volume={effectiveVolume} zoomReactivity={zoomReactivity} />}
             {mode === 'custom' && <CustomFace volume={effectiveVolume} />}
             {mode === 'sequence' && <SequenceFace volume={effectiveVolume} />}
           </div>
