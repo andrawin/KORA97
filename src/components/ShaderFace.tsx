@@ -19,6 +19,7 @@ const fragmentShaderSource = `
   uniform vec3      u_skinColor;
   uniform vec3      u_eyeColor;
   uniform float     u_eyeReactivity;
+  uniform float     u_characterType;
 
   float time;
   float matID = 0.0;
@@ -79,60 +80,58 @@ const fragmentShaderSource = `
       m = 0.0; // Chrome
 
       // --- FACE (Skin) ---
-      float face = length(headP * vec3(1.0, 0.9, 1.05)) - 0.38;
+      float face = length(headP * vec3(1.0, 0.9, 1.05)) - 0.36; // Slightly smaller base
       
-      // Forehead / Brow (Audio reactive furrow)
-      float browDrop = iAudioVolume * 0.08;
-      vec3 browP = headP - vec3(0.0, 0.18 - browDrop, 0.34);
-      browP.x = abs(browP.x);
-      browP -= vec3(0.14, 0.0, 0.0);
-      browP.xy *= rotmat(-0.1 + iAudioVolume * 0.4);
-      float brow = length(browP * vec3(1.5, 2.5, 1.0)) - 0.05;
-      face = smin(face, brow, 0.06);
-
       // Nose
       vec3 noseP = headP - vec3(0.0, -0.05, 0.38);
-      float nose = length(noseP * vec3(2.0, 1.0, 1.0)) - 0.08;
-      face = smin(face, nose, 0.06);
+      float nose = length(noseP * vec3(2.5, 1.2, 1.0)) - 0.06; // Narrower, smaller nose
+      face = smin(face, nose, 0.05);
 
       // Jaw / Audio Reactive
-      float jawDrop = iAudioVolume * 0.25;
-      vec3 jawP = headP - vec3(0.0, -0.2 - jawDrop, 0.32);
-      float jaw = length(jawP * vec3(1.2, 1.2, 1.0)) - 0.18;
+      float jawDrop = iAudioVolume * 0.6; // Increased jaw drop
+      vec3 jawP = headP - vec3(0.0, -0.22 - jawDrop, 0.32); // Lower jaw center
+      float jaw = length(jawP * vec3(1.5, 1.4, 1.0)) - 0.15; // Narrower, more V-shaped jaw
       face = smin(face, jaw, 0.08);
 
       // Cheeks (Audio reactive puff)
-      vec3 cheekP = headP - vec3(0.0, -0.1, 0.3);
+      vec3 cheekP = headP - vec3(0.0, -0.05, 0.32); // Higher cheekbones
       cheekP.x = abs(cheekP.x);
-      cheekP -= vec3(0.15, 0.0, 0.0);
+      cheekP -= vec3(0.16, 0.0, 0.0);
       float cheekPuff = iAudioVolume * 0.08;
-      float cheeks = length(cheekP) - (0.12 + cheekPuff);
+      float cheeks = length(cheekP * vec3(1.0, 1.2, 1.0)) - (0.13 + cheekPuff); // More pronounced
       face = smin(face, cheeks, 0.08);
 
-      // Mouth Cavity (Audio reactive smile/widen)
+      // Mouth Cavity (Audio reactive smile/widen/open)
       float mouthSmile = iAudioVolume * 0.8;
+      float mouthOpen = iAudioVolume * 2.5; // Vertical opening factor
       vec3 mouthP = headP - vec3(0.0, -0.18 - jawDrop*0.5, 0.38);
-      float mouthCavity = length(mouthP * vec3(1.5 - mouthSmile, 4.0, 1.0)) - 0.04;
+      
+      // Decrease the Y multiplier to make the hole taller when talking
+      float cavityYScale = max(1.5, 4.0 - mouthOpen); 
+      float mouthCavity = length(mouthP * vec3(1.5 - mouthSmile, cavityYScale, 1.0)) - (0.04 + iAudioVolume * 0.03);
       face = smax(face, -mouthCavity, 0.02);
 
       if (face < d) { d = face; m = 1.0; }
 
       // --- LIPS ---
-      float lips = length(mouthP * vec3(1.2 - mouthSmile*0.5, 3.0, 0.8)) - 0.05;
+      float lipYScale = max(1.5, 3.0 - mouthOpen * 0.8); 
+      // Increase Z multiplier (1.8) to flatten the lips against the face so they don't stick out
+      float lips = length(mouthP * vec3(1.1 - mouthSmile*0.5, lipYScale, 1.8)) - (0.05 + iAudioVolume * 0.01); 
       lips = smax(lips, -mouthCavity, 0.01);
       if (lips < d) { d = lips; m = 2.0; }
 
-      // --- EYES ---
-      // Audio reactive eye movement (darting) and squinting
+      // --- EYES (Robot - Reverted to tiny ellipse) ---
       float eyeLookX = sin(time * 8.0) * 0.015 * iAudioVolume;
       float eyeLookY = cos(time * 5.0) * 0.01 * iAudioVolume;
-      float eyeSquint = iAudioVolume * u_eyeReactivity; // Eyes narrow when loud
+      float eyeSquint = iAudioVolume * u_eyeReactivity;
       
-      vec3 eyeP = headP - vec3(eyeLookX, 0.08 + eyeLookY, 0.34);
+      vec3 eyeP = headP - vec3(eyeLookX, 0.1 + eyeLookY, 0.35);
       eyeP.x = abs(eyeP.x);
-      eyeP -= vec3(0.16, 0.0, 0.0);
+      eyeP -= vec3(0.15, 0.0, 0.0);
       eyeP.xy *= rotmat(-0.1);
-      float eye = length(eyeP * vec3(1.0, 3.0 + eyeSquint, 1.0)) - 0.035;
+      
+      // Simple tiny ellipse
+      float eye = (length(eyeP * vec3(1.5, 2.5 + eyeSquint * 2.0, 1.5)) - 0.04) * 0.3;
       if (eye < d) { d = eye; m = 3.0; }
 
       // --- EARS (Chrome) ---
@@ -164,8 +163,230 @@ const fragmentShaderSource = `
       return d;
   }
 
+  float demonDist(vec3 p) {
+      float d = 1e4;
+      float m = 0.0;
+      
+      // --- JUPITER PLANET (Background) ---
+      vec3 jupiterP = p - vec3(-15.0, 8.0, -40.0);
+      float jupiter = length(jupiterP) - 12.0;
+      if (jupiter < d) { d = jupiter; m = 5.0; }
+
+      // Head animation
+      float audioSwing = iAudioVolume * 0.25 * sin(time * 12.0);
+      float audioNod = iAudioVolume * 0.2 * cos(time * 8.0);
+      p.y += sin(time * 2.0) * 0.01;
+      p.xy *= rotmat(sin(time * 1.5) * 0.02 + audioSwing);
+      p.yz *= rotmat(audioNod);
+
+      vec3 headP = p - vec3(0.0, 1.5, 0.0);
+
+      // --- FACE (Skin) ---
+      float face = length(headP * vec3(1.0, 0.9, 1.05)) - 0.36;
+      
+      // Cute Anime Eyebrow
+      float browDrop = iAudioVolume * 0.02; 
+      vec3 browP = headP - vec3(0.0, 0.22 - browDrop, 0.32);
+      browP.x = abs(browP.x);
+      browP -= vec3(0.15, 0.0, 0.0);
+      browP.xy *= rotmat(-0.15);
+      float brow = length(browP * vec3(1.5, 8.0, 2.0)) - 0.015;
+      browP.y -= browP.x * browP.x * 2.0; 
+      brow = length(browP * vec3(1.5, 8.0, 2.0)) - 0.015;
+      if (brow < d) { d = brow; m = 4.0; }
+
+      // Nose
+      vec3 noseP = headP - vec3(0.0, -0.05, 0.38);
+      float nose = length(noseP * vec3(2.5, 1.2, 1.0)) - 0.06;
+      face = smin(face, nose, 0.05);
+
+      // Jaw
+      float jawDrop = iAudioVolume * 0.6;
+      vec3 jawP = headP - vec3(0.0, -0.22 - jawDrop, 0.32);
+      float jaw = length(jawP * vec3(1.5, 1.4, 1.0)) - 0.15;
+      face = smin(face, jaw, 0.08);
+
+      // Cheeks
+      vec3 cheekP = headP - vec3(0.0, -0.05, 0.32);
+      cheekP.x = abs(cheekP.x);
+      cheekP -= vec3(0.16, 0.0, 0.0);
+      float cheekPuff = iAudioVolume * 0.08;
+      float cheeks = length(cheekP * vec3(1.0, 1.2, 1.0)) - (0.13 + cheekPuff);
+      face = smin(face, cheeks, 0.08);
+
+      // Mouth Cavity
+      float mouthSmile = iAudioVolume * 0.8;
+      float mouthOpen = iAudioVolume * 2.5;
+      vec3 mouthP = headP - vec3(0.0, -0.18 - jawDrop*0.5, 0.38);
+      float cavityYScale = max(1.5, 4.0 - mouthOpen); 
+      float mouthCavity = length(mouthP * vec3(1.5 - mouthSmile, cavityYScale, 1.0)) - (0.04 + iAudioVolume * 0.03);
+      face = smax(face, -mouthCavity, 0.02);
+
+      if (face < d) { d = face; m = 1.0; } // Skin
+
+      // --- LIPS ---
+      float lipYScale = max(1.5, 3.0 - mouthOpen * 0.8); 
+      float lips = length(mouthP * vec3(1.1 - mouthSmile*0.5, lipYScale, 1.8)) - (0.05 + iAudioVolume * 0.01); 
+      lips = smax(lips, -mouthCavity, 0.01);
+      if (lips < d) { d = lips; m = 2.0; } // Lips
+
+      // --- ANIME EYES ---
+      float eyeLookX = sin(time * 8.0) * 0.015 * iAudioVolume;
+      float eyeLookY = cos(time * 5.0) * 0.01 * iAudioVolume;
+      float eyeSquint = iAudioVolume * u_eyeReactivity;
+      
+      vec3 eyeP = headP - vec3(eyeLookX, 0.08 + eyeLookY, 0.35);
+      eyeP.x = abs(eyeP.x);
+      eyeP -= vec3(0.16, 0.0, 0.0);
+      eyeP.xy *= rotmat(-0.1);
+      
+      float eye = length(eyeP * vec3(1.1, 1.2 + eyeSquint, 1.5)) - 0.08; 
+      if (eye < d) { d = eye; m = 3.0; } // Anime Eye material
+      
+      // Eyeliner / Lashes
+      vec3 lashP = eyeP - vec3(0.0, 0.015, 0.0);
+      float eyeliner = length(lashP * vec3(1.15, 1.4 + eyeSquint, 1.0)) - 0.085;
+      eyeliner = smax(eyeliner, -eye, 0.005);
+      eyeliner = smax(eyeliner, -(eyeP.y + 0.01), 0.01);
+      eyeliner = smax(eyeliner, (eyeP.x - 0.05), 0.02);
+      
+      vec3 flickP = eyeP - vec3(0.07, 0.02, 0.0);
+      flickP.xy *= rotmat(0.4);
+      float flick = length(flickP * vec3(1.0, 3.0, 1.0)) - 0.015;
+      flick = smax(flick, -(eyeP.y - 0.02), 0.01);
+      eyeliner = smin(eyeliner, flick, 0.01);
+
+      if (eyeliner < d) { d = eyeliner; m = 4.0; } // Dark
+
+      // --- FUTURISTIC EYEGLASSES ---
+      vec3 glassP = headP - vec3(0.0, 0.1, 0.38);
+      glassP.x = abs(glassP.x);
+      glassP -= vec3(0.15, 0.0, 0.0);
+      // Frame (Hexagonal/Rectangular)
+      float gBox = length(max(abs(glassP * vec3(1.0, 2.5, 1.0)) - vec3(0.08, 0.025, 0.01), 0.0)) - 0.01;
+      float gHole = length(max(abs(glassP * vec3(1.0, 2.5, 1.0)) - vec3(0.06, 0.015, 0.02), 0.0)) - 0.01;
+      float glasses = smax(gBox, -gHole, 0.01) * 0.5;
+      // Bridge
+      vec3 bridgeP = headP - vec3(0.0, 0.1, 0.39);
+      float bridge = length(max(abs(bridgeP) - vec3(0.05, 0.005, 0.005), 0.0)) - 0.005;
+      glasses = smin(glasses, bridge, 0.01);
+      
+      // Add some glowing tech nodes on the sides
+      vec3 nodeP = glassP - vec3(0.1, 0.0, -0.02);
+      float nodes = length(nodeP) - 0.02;
+      glasses = smin(glasses, nodes, 0.01);
+
+      if (glasses < d) { d = glasses; m = 8.0; }
+
+      // --- POINTY EARS ---
+      vec3 earP = headP - vec3(0.0, 0.0, 0.05);
+      earP.x = abs(earP.x);
+      earP -= vec3(0.35, 0.0, 0.0);
+      earP.xy *= rotmat(0.3);
+      earP.xz *= rotmat(-0.2);
+      float ear = (length(earP * vec3(4.0, 1.5, 2.0)) - 0.15) * 0.25;
+      vec3 tipP = earP - vec3(0.0, 0.15, 0.0);
+      float tip = (length(tipP * vec3(6.0, 2.0, 3.0)) - 0.05) * 0.16;
+      ear = smin(ear, tip, 0.1);
+      if (ear < d) { d = ear; m = 1.0; } // Skin
+
+      // --- HORNS ---
+      vec3 hornP = headP - vec3(0.0, 0.25, 0.0);
+      hornP.x = abs(hornP.x);
+      hornP -= vec3(0.25, 0.0, 0.0);
+      hornP.xy *= rotmat(-0.5);
+      hornP.yz *= rotmat(-0.2);
+      
+      float horn = 1e4;
+      vec3 hp = hornP;
+      float r = 0.12;
+      for(int i=0; i<6; i++) {
+          float segment = length(hp * vec3(1.0, 0.8, 1.0)) - r;
+          horn = smin(horn, segment, 0.08);
+          hp.y -= 0.12;
+          hp.xy *= rotmat(0.25);
+          hp.yz *= rotmat(0.1);
+          r *= 0.8;
+      }
+      if (horn < d) { d = horn; m = 6.0; } // Horn material
+
+      // --- HAIR (Blue flowing) ---
+      vec3 hairP = headP - vec3(0.0, 0.1, -0.05);
+      float hairBase = length(hairP * vec3(0.9, 0.8, 0.95)) - 0.45;
+      
+      vec3 bangP = headP - vec3(0.0, 0.2, 0.35);
+      bangP.x = abs(bangP.x);
+      bangP -= vec3(0.1, 0.0, 0.0);
+      bangP.xy *= rotmat(0.2);
+      float bangs = (length(bangP * vec3(2.0, 1.0, 2.0)) - 0.15) * 0.5;
+      
+      vec3 tailP = headP - vec3(0.0, -0.1, -0.1);
+      tailP.x = abs(tailP.x);
+      tailP -= vec3(0.45, 0.0, 0.0);
+      vec3 tp = tailP;
+      tp.x += sin(tp.y * 8.0) * 0.05;
+      tp.z += cos(tp.y * 6.0) * 0.05;
+      float tail = (length(tp * vec3(1.5, 0.4, 1.5)) - 0.25) * 0.6;
+      tail = smax(tail, tp.y - 0.2, 0.1);
+      tail = smax(tail, -(tp.y + 0.8), 0.2);
+      
+      float hair = smin(hairBase, bangs, 0.1);
+      hair = smin(hair, tail, 0.15);
+      
+      vec3 faceCutP = headP - vec3(0.0, -0.1, 0.1);
+      float faceCut = length(faceCutP * vec3(1.0, 0.9, 1.0)) - 0.4;
+      hair = smax(hair, -faceCut, 0.05);
+      
+      if (hair < d) { d = hair; m = 7.0; } // Hair material
+
+      // --- ROCKET HAIRPIN ---
+      vec3 rocketP = headP - vec3(0.32, 0.25, 0.15); // Right side of head
+      rocketP.xy *= rotmat(-0.8); // Tilt outwards
+      rocketP.yz *= rotmat(0.4);
+      
+      // Rocket body (Capsule)
+      float rBody = length(rocketP - vec3(0.0, clamp(rocketP.y, -0.06, 0.06), 0.0)) - 0.025;
+      if (rBody < d) { d = rBody; m = 0.0; } // Chrome body
+      
+      // Rocket tip (Cone-ish)
+      vec3 rTipP = rocketP - vec3(0.0, 0.08, 0.0);
+      float rTip = length(rTipP * vec3(1.0, 0.5, 1.0)) - 0.025;
+      rTip = smax(rTip, -rTipP.y, 0.01); // Cut bottom
+      if (rTip < d) { d = rTip; m = 6.0; } // Red/Orange tip
+      
+      // Rocket fins
+      vec3 rFinP = rocketP - vec3(0.0, -0.04, 0.0);
+      rFinP.xz *= rotmat(0.785); // 45 degrees
+      float fins1 = length(max(abs(rFinP) - vec3(0.04, 0.02, 0.005), 0.0)) - 0.002;
+      float fins2 = length(max(abs(rFinP) - vec3(0.005, 0.02, 0.04), 0.0)) - 0.002;
+      float fins = smin(fins1, fins2, 0.005);
+      if (fins < d) { d = fins; m = 6.0; } // Red/Orange fins
+
+      // --- CYBORG NECK ---
+      vec3 neckP = p - vec3(0.0, 0.7, 0.0);
+      float neck = cylinder(neckP, vec3(0,1,0), 0.5, 0.12);
+      float grooves = sin(neckP.y * 50.0);
+      neck -= grooves * 0.004;
+      if (neck < d) { 
+          d = neck; 
+          m = (grooves > 0.5) ? 4.0 : 0.0; // Dark grooves, chrome neck
+      }
+
+      // Inner mouth dark
+      if (mouthCavity < d + 0.02 && headP.z > 0.2) {
+          m = 4.0;
+      }
+
+      matID = m;
+      return d;
+  }
+
   float f(vec3 p) {
-      return robotDist(p);
+      if (u_characterType > 0.5) {
+          return demonDist(p);
+      } else {
+          return robotDist(p);
+      }
   }
 
   vec3 sceneNorm(vec3 p) {
@@ -284,27 +505,84 @@ const fragmentShaderSource = `
               col = lipColor * (diff * 0.7 + 0.3);
               col += vec3(1.0) * spec * 0.2; // Glossy lips
           } else if (m == 3.0) {
-              // Eyes
-              col = u_eyeColor * (diff * 0.8 + 0.2);
-              col += vec3(1.0) * spec * 0.8; // Very glossy eyes
+              if (u_characterType > 0.5) {
+                  // Anime Eyes using normals for UVs
+                  vec2 eyeUV = n.xy;
+                  
+                  // Base eye white (sclera)
+                  vec3 eyeCol = vec3(1.0);
+                  
+                  // Iris
+                  float irisDist = length(eyeUV - vec2(0.0, -0.05));
+                  if (irisDist < 0.55) {
+                      // Iris gradient (darker at top, lighter at bottom)
+                      float gradient = smoothstep(0.4, -0.4, eyeUV.y);
+                      eyeCol = mix(u_eyeColor * 0.2, u_eyeColor * 1.8, gradient);
+                      
+                      // Pupil (Dark circle with bright crescent inside, like Row 3)
+                      vec2 pupilUV = eyeUV - vec2(0.0, -0.05);
+                      if (length(pupilUV) < 0.22) {
+                          eyeCol = u_eyeColor * 0.1; // Dark pupil
+                          
+                          // Bright crescent inside the pupil
+                          if (length(pupilUV - vec2(0.0, -0.02)) < 0.12 && length(pupilUV - vec2(0.0, 0.04)) > 0.1) {
+                              eyeCol = u_eyeColor * 1.5; // Bright crescent
+                          }
+                      }
+                      
+                      // Speckles / Stars in the bottom half
+                      if (eyeUV.y < -0.1) {
+                          if (length(eyeUV - vec2(0.15, -0.25)) < 0.03) eyeCol = vec3(1.0);
+                          if (length(eyeUV - vec2(-0.15, -0.2)) < 0.02) eyeCol = vec3(1.0);
+                          if (length(eyeUV - vec2(0.0, -0.35)) < 0.025) eyeCol = vec3(1.0);
+                      }
+                      
+                      // Main Catchlight (Top Right for both eyes)
+                      if (length(eyeUV - vec2(0.2, 0.25)) < 0.15) eyeCol = vec3(1.0); 
+                      
+                      // Dark rim around the iris
+                      if (irisDist > 0.5) {
+                          eyeCol = mix(u_eyeColor * 0.1, eyeCol, smoothstep(0.55, 0.5, irisDist));
+                      }
+                  }
+                  
+                  col = eyeCol * (diff * 0.8 + 0.2);
+                  col += vec3(1.0) * spec * 0.5; // Glossy eyes
+              } else {
+                  // Robot Eyes (Solid color glow)
+                  col = u_eyeColor * 2.0;
+              }
           } else if (m == 4.0) {
               // Dark (Neck grooves, mouth cavity)
               col = vec3(0.02);
           } else if (m == 5.0) {
               // Jupiter Planet
-              // Base color
               vec3 jupColor = vec3(0.8, 0.5, 0.3);
-              // Add bands using sine waves based on local Y position
-              // We need to reconstruct local Y. Since it's far away, rp.y is a good approximation
               float bands = sin(rp.y * 1.5) * 0.5 + 0.5;
               float bands2 = sin(rp.y * 4.0 + sin(rp.x * 0.5)) * 0.5 + 0.5;
               jupColor = mix(jupColor, vec3(0.6, 0.3, 0.1), bands * 0.6);
               jupColor = mix(jupColor, vec3(0.9, 0.7, 0.5), bands2 * 0.4);
               
               col = jupColor * (diff * 0.8 + 0.2);
-              // Add a slight atmospheric glow at the edges
               float fre = pow(clamp(1.0 - dot(n, -rd), 0.0, 1.0), 4.0);
               col += vec3(0.9, 0.6, 0.3) * fre * 0.5;
+          } else if (m == 6.0) {
+              // Horns (Red/Orange)
+              vec3 hornColor = vec3(0.8, 0.3, 0.1);
+              float ridge = sin(rp.y * 40.0) * 0.5 + 0.5;
+              hornColor = mix(hornColor, hornColor * 0.6, ridge * 0.3);
+              col = hornColor * (diff * 0.8 + 0.2);
+              col += vec3(1.0) * spec * 0.3;
+          } else if (m == 7.0) {
+              // Hair (Blue)
+              vec3 hairColor = vec3(0.2, 0.3, 0.7);
+              float hairHighlight = pow(max(dot(n, vec3(0.0, 1.0, 0.0)), 0.0), 4.0);
+              col = hairColor * (diff * 0.8 + 0.2);
+              col += vec3(0.4, 0.6, 1.0) * hairHighlight * 0.5;
+          } else if (m == 8.0) {
+              // Futuristic Glasses (Glowing Cyan/Pink)
+              vec3 glassColor = mix(vec3(0.0, 1.0, 1.0), vec3(1.0, 0.0, 1.0), sin(rp.x * 10.0 + time * 2.0) * 0.5 + 0.5);
+              col = glassColor * 2.0; // Glow
           }
           
           // Ambient occlusion (fake)
@@ -326,6 +604,7 @@ interface ShaderFaceProps {
   skinColor?: string;
   eyeColor?: string;
   eyeReactivity?: number;
+  characterType?: number;
 }
 
 const hexToRgb = (hex: string) => {
@@ -343,7 +622,8 @@ export const ShaderFace: React.FC<ShaderFaceProps> = ({
   bgColor = '#3399ff',
   skinColor = '#bfa68e',
   eyeColor = '#331a0d',
-  eyeReactivity = 3.0
+  eyeReactivity = 3.0,
+  characterType = 0.0
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const glRef = useRef<WebGLRenderingContext | null>(null);
@@ -482,10 +762,12 @@ export const ShaderFace: React.FC<ShaderFaceProps> = ({
       const uSkinColorLoc = gl.getUniformLocation(programRef.current, 'u_skinColor');
       const uEyeColorLoc = gl.getUniformLocation(programRef.current, 'u_eyeColor');
       const uEyeReactivityLoc = gl.getUniformLocation(programRef.current, 'u_eyeReactivity');
+      const uCharacterTypeLoc = gl.getUniformLocation(programRef.current, 'u_characterType');
       
       gl.uniform1f(iAudioVolumeLoc, volume);
       gl.uniform1f(uZoomReactivityLoc, zoomReactivity);
       gl.uniform1f(uEyeReactivityLoc, eyeReactivity);
+      gl.uniform1f(uCharacterTypeLoc, characterType);
       
       const bgRgb = hexToRgb(bgColor);
       gl.uniform3f(uBgColorLoc, bgRgb[0], bgRgb[1], bgRgb[2]);
@@ -496,7 +778,7 @@ export const ShaderFace: React.FC<ShaderFaceProps> = ({
       const eyeRgb = hexToRgb(eyeColor);
       gl.uniform3f(uEyeColorLoc, eyeRgb[0], eyeRgb[1], eyeRgb[2]);
     }
-  }, [volume, zoomReactivity, bgColor, skinColor, eyeColor, eyeReactivity]);
+  }, [volume, zoomReactivity, bgColor, skinColor, eyeColor, eyeReactivity, characterType]);
 
   return (
     <canvas 

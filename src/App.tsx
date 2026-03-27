@@ -16,6 +16,7 @@ export default function App() {
   const [skinColor, setSkinColor] = useState('#bfa68e');
   const [eyeColor, setEyeColor] = useState('#331a0d');
   const [eyeReactivity, setEyeReactivity] = useState(3.0);
+  const [characterType, setCharacterType] = useState(0.0);
   
   const effectiveVolume = volume * reactivity;
 
@@ -71,6 +72,39 @@ export default function App() {
                     </button>
                   </div>
                 </div>
+
+                {/* Character Selection */}
+                {mode === 'shader' && (
+                  <div>
+                    <label className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3 block">Character</label>
+                    <div className="flex bg-gray-800 rounded-lg p-1 border border-gray-700">
+                      <button
+                        onClick={() => {
+                          setCharacterType(0.0);
+                          setSkinColor('#bfa68e');
+                          setEyeColor('#331a0d');
+                        }}
+                        className={`flex-1 py-1.5 text-sm font-medium rounded-md transition-all ${
+                          characterType === 0.0 ? 'bg-gray-600 text-white shadow-sm' : 'text-gray-400 hover:text-gray-200'
+                        }`}
+                      >
+                        Robot
+                      </button>
+                      <button
+                        onClick={() => {
+                          setCharacterType(1.0);
+                          setSkinColor('#ff5522');
+                          setEyeColor('#ffaa00');
+                        }}
+                        className={`flex-1 py-1.5 text-sm font-medium rounded-md transition-all ${
+                          characterType === 1.0 ? 'bg-gray-600 text-white shadow-sm' : 'text-gray-400 hover:text-gray-200'
+                        }`}
+                      >
+                        Demon Girl
+                      </button>
+                    </div>
+                  </div>
+                )}
 
                 {/* Reactivity Slider */}
                 <div>
@@ -266,6 +300,7 @@ export default function App() {
                           skinColor={skinColor}
                           eyeColor={eyeColor}
                           eyeReactivity={eyeReactivity}
+                          characterType={characterType}
                         />
                       )}
                       {mode === 'custom' && <CustomFace volume={effectiveVolume} />}
