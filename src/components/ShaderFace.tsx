@@ -15,6 +15,10 @@ const fragmentShaderSource = `
   uniform float     iAudioVolume;
   uniform vec4      iMouse;
   uniform float     u_zoomReactivity;
+  uniform vec3      u_bgColor;
+  uniform vec3      u_skinColor;
+  uniform vec3      u_eyeColor;
+  uniform float     u_eyeReactivity;
 
   float time;
   float matID = 0.0;
@@ -122,7 +126,7 @@ const fragmentShaderSource = `
       // Audio reactive eye movement (darting) and squinting
       float eyeLookX = sin(time * 8.0) * 0.015 * iAudioVolume;
       float eyeLookY = cos(time * 5.0) * 0.01 * iAudioVolume;
-      float eyeSquint = iAudioVolume * 3.0; // Eyes narrow when loud
+      float eyeSquint = iAudioVolume * u_eyeReactivity; // Eyes narrow when loud
       
       vec3 eyeP = headP - vec3(eyeLookX, 0.08 + eyeLookY, 0.34);
       eyeP.x = abs(eyeP.x);
@@ -251,7 +255,7 @@ const fragmentShaderSource = `
           float layerAlpha = clamp(activeDensity - fi + 1.0, 0.0, 1.0);
           pc += smoothstep(r+0.01, r-0.01, length(pgrid)) * (0.5 + 0.5*sin(time*2.0 + pn*10.0)) * (1.0/fi) * layerAlpha;
       }
-      col += vec3(0.2, 0.6, 1.0) * pc * 0.8;
+      col += u_bgColor * pc * 0.8;
 
       if(t < 100.0) {
           vec3 rp = ro + rd * t;
@@ -272,18 +276,16 @@ const fragmentShaderSource = `
               col += vec3(1.0) * fre * 0.5;
           } else if (m == 1.0) {
               // Skin
-              vec3 skinColor = vec3(0.75, 0.55, 0.42); // Tan / Southeast Asian skin tone
-              col = skinColor * (diff * 0.7 + 0.3);
+              col = u_skinColor * (diff * 0.7 + 0.3);
               col += vec3(1.0) * spec * 0.1; // Slight skin specularity
           } else if (m == 2.0) {
               // Lips
-              vec3 lipColor = vec3(0.8, 0.4, 0.4);
+              vec3 lipColor = mix(u_skinColor, vec3(0.8, 0.2, 0.2), 0.5);
               col = lipColor * (diff * 0.7 + 0.3);
               col += vec3(1.0) * spec * 0.2; // Glossy lips
           } else if (m == 3.0) {
-              // Eyes (Brown/Hazel)
-              vec3 eyeColor = vec3(0.2, 0.1, 0.05);
-              col = eyeColor * (diff * 0.8 + 0.2);
+              // Eyes
+              col = u_eyeColor * (diff * 0.8 + 0.2);
               col += vec3(1.0) * spec * 0.8; // Very glossy eyes
           } else if (m == 4.0) {
               // Dark (Neck grooves, mouth cavity)
@@ -320,9 +322,29 @@ const fragmentShaderSource = `
 interface ShaderFaceProps {
   volume: number;
   zoomReactivity?: number;
+  bgColor?: string;
+  skinColor?: string;
+  eyeColor?: string;
+  eyeReactivity?: number;
 }
 
-export const ShaderFace: React.FC<ShaderFaceProps> = ({ volume, zoomReactivity = 0.5 }) => {
+const hexToRgb = (hex: string) => {
+  const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+  return result ? [
+    parseInt(result[1], 16) / 255,
+    parseInt(result[2], 16) / 255,
+    parseInt(result[3], 16) / 255
+  ] : [0, 0, 0];
+};
+
+export const ShaderFace: React.FC<ShaderFaceProps> = ({ 
+  volume, 
+  zoomReactivity = 0.5,
+  bgColor = '#3399ff',
+  skinColor = '#bfa68e',
+  eyeColor = '#331a0d',
+  eyeReactivity = 3.0
+}) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const glRef = useRef<WebGLRenderingContext | null>(null);
   const programRef = useRef<WebGLProgram | null>(null);
@@ -453,12 +475,28 @@ export const ShaderFace: React.FC<ShaderFaceProps> = ({ volume, zoomReactivity =
     if (glRef.current && programRef.current) {
       const gl = glRef.current;
       gl.useProgram(programRef.current);
+      
       const iAudioVolumeLoc = gl.getUniformLocation(programRef.current, 'iAudioVolume');
       const uZoomReactivityLoc = gl.getUniformLocation(programRef.current, 'u_zoomReactivity');
+      const uBgColorLoc = gl.getUniformLocation(programRef.current, 'u_bgColor');
+      const uSkinColorLoc = gl.getUniformLocation(programRef.current, 'u_skinColor');
+      const uEyeColorLoc = gl.getUniformLocation(programRef.current, 'u_eyeColor');
+      const uEyeReactivityLoc = gl.getUniformLocation(programRef.current, 'u_eyeReactivity');
+      
       gl.uniform1f(iAudioVolumeLoc, volume);
       gl.uniform1f(uZoomReactivityLoc, zoomReactivity);
+      gl.uniform1f(uEyeReactivityLoc, eyeReactivity);
+      
+      const bgRgb = hexToRgb(bgColor);
+      gl.uniform3f(uBgColorLoc, bgRgb[0], bgRgb[1], bgRgb[2]);
+      
+      const skinRgb = hexToRgb(skinColor);
+      gl.uniform3f(uSkinColorLoc, skinRgb[0], skinRgb[1], skinRgb[2]);
+      
+      const eyeRgb = hexToRgb(eyeColor);
+      gl.uniform3f(uEyeColorLoc, eyeRgb[0], eyeRgb[1], eyeRgb[2]);
     }
-  }, [volume, zoomReactivity]);
+  }, [volume, zoomReactivity, bgColor, skinColor, eyeColor, eyeReactivity]);
 
   return (
     <canvas 
