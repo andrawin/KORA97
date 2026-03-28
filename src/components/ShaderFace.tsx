@@ -175,9 +175,14 @@ const fragmentShaderSource = `
       // Head animation
       float audioSwing = iAudioVolume * 0.25 * sin(time * 12.0);
       float audioNod = iAudioVolume * 0.2 * cos(time * 8.0);
-      p.y += sin(time * 2.0) * 0.01;
+      
+      // Idle Gestures (Sighing and Shrugging)
+      float sigh = smoothstep(0.9, 1.0, sin(time * 0.5));
+      float shrug = smoothstep(0.9, 1.0, cos(time * 0.6));
+      
+      p.y += sin(time * 2.0) * 0.01 + sigh * 0.05;
       p.xy *= rotmat(sin(time * 1.5) * 0.02 + audioSwing);
-      p.yz *= rotmat(audioNod);
+      p.yz *= rotmat(audioNod + sigh * 0.15); // Tilt down when sighing
 
       vec3 headP = p - vec3(0.0, 1.5, 0.0);
 
@@ -233,7 +238,7 @@ const fragmentShaderSource = `
       // --- ANIME EYES ---
       float eyeLookX = sin(time * 8.0) * 0.015 * iAudioVolume;
       float eyeLookY = cos(time * 5.0) * 0.01 * iAudioVolume;
-      float eyeSquint = iAudioVolume * u_eyeReactivity;
+      float eyeSquint = iAudioVolume * u_eyeReactivity + sigh * 0.6; // Squint when sighing
       
       vec3 eyeP = headP - vec3(eyeLookX, 0.08 + eyeLookY, 0.35);
       eyeP.x = abs(eyeP.x);
@@ -314,18 +319,21 @@ const fragmentShaderSource = `
       vec3 hairP = headP - vec3(0.0, 0.1, -0.05);
       float hairBase = length(hairP * vec3(0.9, 0.8, 0.95)) - 0.45;
       
+      float hairWave = time * 3.0 + iAudioVolume * 5.0; // Dynamic wave speed
+      
       vec3 bangP = headP - vec3(0.0, 0.2, 0.35);
       bangP.x = abs(bangP.x);
       bangP -= vec3(0.1, 0.0, 0.0);
       bangP.xy *= rotmat(0.2);
+      bangP.x += sin(bangP.y * 15.0 + hairWave) * 0.02; // Waving bangs
       float bangs = (length(bangP * vec3(2.0, 1.0, 2.0)) - 0.15) * 0.5;
       
       vec3 tailP = headP - vec3(0.0, -0.1, -0.1);
       tailP.x = abs(tailP.x);
       tailP -= vec3(0.45, 0.0, 0.0);
       vec3 tp = tailP;
-      tp.x += sin(tp.y * 8.0) * 0.05;
-      tp.z += cos(tp.y * 6.0) * 0.05;
+      tp.x += sin(tp.y * 8.0 - hairWave) * (0.05 + iAudioVolume * 0.1); // Waving tails
+      tp.z += cos(tp.y * 6.0 - hairWave * 0.8) * (0.05 + iAudioVolume * 0.1);
       float tail = (length(tp * vec3(1.5, 0.4, 1.5)) - 0.25) * 0.6;
       tail = smax(tail, tp.y - 0.2, 0.1);
       tail = smax(tail, -(tp.y + 0.8), 0.2);
@@ -362,7 +370,7 @@ const fragmentShaderSource = `
       float fins = smin(fins1, fins2, 0.005);
       if (fins < d) { d = fins; m = 6.0; } // Red/Orange fins
 
-      // --- CYBORG NECK ---
+      // --- CYBORG NECK & SHOULDERS ---
       vec3 neckP = p - vec3(0.0, 0.7, 0.0);
       float neck = cylinder(neckP, vec3(0,1,0), 0.5, 0.12);
       float grooves = sin(neckP.y * 50.0);
@@ -371,6 +379,13 @@ const fragmentShaderSource = `
           d = neck; 
           m = (grooves > 0.5) ? 4.0 : 0.0; // Dark grooves, chrome neck
       }
+
+      vec3 torsoP = p - vec3(0.0, 0.9, 0.0);
+      torsoP.y += shrug * 0.15; // Shrug moves shoulders up
+      torsoP.y += sigh * 0.05;  // Sigh heaves chest
+      float torso = length(torsoP * vec3(0.7, 1.2, 1.0)) - 0.35;
+      torso = smax(torso, -(torsoP.y + 0.15), 0.1); // Cut off bottom
+      if (torso < d) { d = torso; m = 0.0; } // Chrome torso
 
       // Inner mouth dark
       if (mouthCavity < d + 0.02 && headP.z > 0.2) {
