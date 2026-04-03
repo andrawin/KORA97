@@ -15,6 +15,7 @@ const fragmentShaderSource = `
   uniform float     iAudioVolume;
   uniform vec4      iMouse;
   uniform float     u_zoomReactivity;
+  uniform float     u_manualZoom;
   uniform vec3      u_bgColor;
   uniform vec3      u_skinColor;
   uniform vec3      u_eyeColor;
@@ -42,6 +43,54 @@ const fragmentShaderSource = `
       float d = length(p_ortho) - r;
       float d_t = abs(t) - h;
       return length(max(vec2(d, d_t), 0.0)) + min(max(d, d_t), 0.0);
+  }
+
+  float min2(vec2 v) { return min(v.x, v.y); }
+  float max3(vec3 v) { return max(v.x, max(v.y, v.z)); }
+  float dot3(vec3 v) { return dot(v, v); }
+  float sum2(vec2 v) { return dot(v, vec2(1)); }
+
+  vec3 bend(vec3 p) {
+      float c = cos(-.3 * p.x),
+            s = sin(-.3 * p.x);
+      p.xz *= mat2(c, s, -s, c);
+      return p;
+  }
+
+  float box(vec3 p, vec3 b) {
+      vec3 q = abs(p) - b;
+      return length(max(q, 0.)) + min(max3(q), 0.);
+  }
+
+  float cap(vec3 p, float h, float r) {
+      r *= 1. - p.x / h * .14;
+      p.x -= clamp(p.x, 0., h);
+      return length(p) - r;
+  }
+
+  float tri(vec3 p, vec3 a, vec3 c) {
+      const vec3 b = vec3(.06, 0.0, 0.0);
+      vec3 ba = b - a,
+           pa = p - a,
+           cb = c - b,
+           pb = p - b,
+           ac = a - c,
+           pc = p - c,
+           n = cross(ba, ac);
+      return sqrt((sign(dot(cross(ba, n), pa)) + sign(dot(cross(cb, n), pb)) + sign(dot(cross(ac, n), pc)) < 2.) ? min(min(dot3(ba * clamp(dot(ba, pa) / dot3(ba), 0.0, 1.0) - pa), dot3(cb * clamp(dot(cb, pb) / dot3(cb), 0.0, 1.0) - pb)), dot3(ac * clamp(dot(ac, pc) / dot3(ac), 0.0, 1.0) - pc)) : dot(n, pa) * dot(n, pa) / dot3(n));
+  }
+
+  float handCyl(vec3 p) {
+      vec2 d = abs(vec2(length(p.yz), p.x)) - vec2(.06, .15);
+      return min(max(d.x, d.y), 0.) + length(max(d, 0.));
+  }
+
+  // Simple articulated bone.
+  float bone(inout vec3 p, mat2 rot, float h, float r) {
+      p.xz *= rot;
+      float d = cap(p, h, r);
+      p.x -= h;
+      return d;
   }
 
   float robotDist(vec3 p) {
@@ -380,12 +429,85 @@ const fragmentShaderSource = `
           m = (grooves > 0.5) ? 4.0 : 0.0; // Dark grooves, chrome neck
       }
 
-      vec3 torsoP = p - vec3(0.0, 0.9, 0.0);
-      torsoP.y += shrug * 0.15; // Shrug moves shoulders up
-      torsoP.y += sigh * 0.05;  // Sigh heaves chest
-      float torso = length(torsoP * vec3(0.7, 1.2, 1.0)) - 0.35;
-      torso = smax(torso, -(torsoP.y + 0.15), 0.1); // Cut off bottom
-      if (torso < d) { d = torso; m = 0.0; } // Chrome torso
+      // --- FLOATING HAND ---
+      // Move to the lower left side (x ~ -0.4, y ~ 0.8) to match the requested position
+      vec3 handP = p - vec3(-0.4, 0.8 + audioSwing * 0.1, 0.25);
+      
+      // Default orientation: fingers up, palm facing camera
+      handP.xy *= rotmat(1.5708); // Local X -> World Y (Up)
+      handP.yz *= rotmat(3.14159); // Flip palm to face camera
+      
+      float audioReact = smoothstep(0.05, 0.4, iAudioVolume);
+      
+      // Audio reactive wrist movement
+      handP.xy *= rotmat(mix(0.0, -0.2, audioReact)); // Slight side flick
+      handP.xz *= rotmat(mix(0.0, 0.4, audioReact));  // Point towards camera slightly
+      
+      handP *= 2.5; 
+      
+      vec3 hr, q = handP + vec3(.25, -.1, .07);
+      q.xy *= mat2(.49757, .86742, -.86742, .49757);
+      float dHand = bone(q, mat2(.98007, -.19867, .19867, .98007), .42, .04 - .07 * smoothstep(.1, .5, q.x));
+      q.yz *= mat2(.16997, -.98545, .98545, .16997);
+      
+      // Thumb curl: open by default (0.1), closed on audio react (1.5)
+      float cThumb = mix(0.1, 1.5, audioReact);
+      dHand = smin(dHand, bone(q, rotmat(.3 * cThumb - .5), .26, -.025), .04);
+      
+      float h = handCyl(q);
+      dHand = smin(dHand, bone(q, mat2(.995, -.09983, .09983, .995), .22, -.03 - .065 * smoothstep(.1, .25, q.x) * smoothstep(.05, -.08, q.z)), .02);
+      
+      vec3 handPBend = bend(handP);
+      hr = vec3(.37, .47 - smoothstep(.1, -.4, handPBend.x) * .15, .12);
+      dHand = smin(dHand, box(handPBend, hr - .12), .16);
+      handPBend.x -= hr.x;
+      
+      dHand = smin(dHand, tri(handPBend, vec3(0, hr.y - .12, 0), vec3(0, .12 - hr.y, 0)), .05);
+      dHand -= .12;
+      
+      // Palm curl
+      float palmCurl = mix(0.0, 0.3, audioReact);
+      handPBend.xz *= rotmat(-.2 - palmCurl * .63);
+      
+      vec3 qBase = handPBend;
+      qBase.xz -= .05;
+      
+      // Index (y ~ +0.35): open by default (0.0), points to camera on audio react (-0.3)
+      float cIdx = mix(0.0, -0.3 + sin(time*10.0)*0.1, audioReact);
+      vec3 qI = qBase; qI.y -= (hr.y - 0.12); qI.z += 0.07; qI.xy *= mat2(.995, -.09983, .09983, .995);
+      mat2 r1I = rotmat(-.7 * cIdx), r2I = rotmat(-1.4 * cIdx);
+      dHand = smin(dHand, bone(qI, r1I, .19 * 1.1, .105), .06);
+      dHand = smin(dHand, bone(qI, r2I, .13 * 1.1, .09), .01);
+      dHand = smin(dHand, bone(qI, mat2(1.,0.,0.,1.), .12 * 1.1, .08), .01);
+
+      // Middle (y ~ +0.115): open by default (0.1), closed on audio react (1.6)
+      float cMid = mix(0.1, 1.6, audioReact);
+      vec3 qM = qBase; qM.y -= (hr.y * 0.5 - 0.12); qM.xy *= mat2(.9998, -.02, .02, .9998);
+      mat2 r1M = rotmat(-.7 * cMid), r2M = rotmat(-1.4 * cMid);
+      dHand = smin(dHand, bone(qM, r1M, .32 * 1.2, .105), .06);
+      dHand = smin(dHand, bone(qM, r2M, .17 * 1.2, .09), .01);
+      dHand = smin(dHand, bone(qM, r1M, .13 * 1.2, .08), .01);
+
+      // Ring (y ~ -0.115): open by default (0.1), closed on audio react (1.6)
+      float cRin = mix(0.1, 1.6, audioReact);
+      vec3 qR = qBase; qR.y += (hr.y * 0.5 - 0.12); qR.xy *= mat2(.9998, -.02, .02, .9998);
+      mat2 r1R = rotmat(-.7 * cRin), r2R = rotmat(-1.4 * cRin);
+      dHand = smin(dHand, bone(qR, r1R, .32 * 1.1, .105), .06);
+      dHand = smin(dHand, bone(qR, r2R, .17 * 1.1, .09), .01);
+      dHand = smin(dHand, bone(qR, r1R, .13 * 1.1, .08), .01);
+
+      // Pinky (y ~ -0.35): open by default (0.1), sometimes closed/open on audio react
+      float pinkyReact = mix(1.6, 0.1, step(0.5, sin(time*5.0)));
+      float cPin = mix(0.1, pinkyReact, audioReact);
+      vec3 qP = qBase; qP.y += (hr.y - 0.12); qP.z += 0.07; qP.xy *= mat2(.995, -.09983, .09983, .995);
+      mat2 r1P = rotmat(-.7 * cPin), r2P = rotmat(-1.4 * cPin);
+      dHand = smin(dHand, bone(qP, r1P, .19 * 0.9, .105), .06);
+      dHand = smin(dHand, bone(qP, r2P, .13 * 0.9, .09), .01);
+      dHand = smin(dHand, bone(qP, mat2(1.,0.,0.,1.), .12 * 0.9, .08), .01);
+
+      float hand = (min(h, dHand) - .01) / 2.5; // Scale distance back
+      
+      if (hand < d) { d = hand; m = 1.0; } // Skin material
 
       // Inner mouth dark
       if (mouthCavity < d + 0.02 && headP.z > 0.2) {
@@ -438,7 +560,7 @@ const fragmentShaderSource = `
 
       // Camera (Zoomed in on face, with audio reactivity)
       float zoomOffset = iAudioVolume * u_zoomReactivity * 0.5;
-      vec3 ro = vec3(0.0, 1.4, 1.1 - zoomOffset);
+      vec3 ro = vec3(0.0, 1.4, 1.1 - zoomOffset - u_manualZoom);
       
       // Mouse rotation
       if (iMouse.z > 0.0) {
@@ -615,6 +737,7 @@ const fragmentShaderSource = `
 interface ShaderFaceProps {
   volume: number;
   zoomReactivity?: number;
+  manualZoom?: number;
   bgColor?: string;
   skinColor?: string;
   eyeColor?: string;
@@ -634,6 +757,7 @@ const hexToRgb = (hex: string) => {
 export const ShaderFace: React.FC<ShaderFaceProps> = ({ 
   volume, 
   zoomReactivity = 0.5,
+  manualZoom = 0.0,
   bgColor = '#3399ff',
   skinColor = '#bfa68e',
   eyeColor = '#331a0d',
@@ -773,6 +897,7 @@ export const ShaderFace: React.FC<ShaderFaceProps> = ({
       
       const iAudioVolumeLoc = gl.getUniformLocation(programRef.current, 'iAudioVolume');
       const uZoomReactivityLoc = gl.getUniformLocation(programRef.current, 'u_zoomReactivity');
+      const uManualZoomLoc = gl.getUniformLocation(programRef.current, 'u_manualZoom');
       const uBgColorLoc = gl.getUniformLocation(programRef.current, 'u_bgColor');
       const uSkinColorLoc = gl.getUniformLocation(programRef.current, 'u_skinColor');
       const uEyeColorLoc = gl.getUniformLocation(programRef.current, 'u_eyeColor');
@@ -781,6 +906,7 @@ export const ShaderFace: React.FC<ShaderFaceProps> = ({
       
       gl.uniform1f(iAudioVolumeLoc, volume);
       gl.uniform1f(uZoomReactivityLoc, zoomReactivity);
+      gl.uniform1f(uManualZoomLoc, manualZoom);
       gl.uniform1f(uEyeReactivityLoc, eyeReactivity);
       gl.uniform1f(uCharacterTypeLoc, characterType);
       
@@ -793,7 +919,7 @@ export const ShaderFace: React.FC<ShaderFaceProps> = ({
       const eyeRgb = hexToRgb(eyeColor);
       gl.uniform3f(uEyeColorLoc, eyeRgb[0], eyeRgb[1], eyeRgb[2]);
     }
-  }, [volume, zoomReactivity, bgColor, skinColor, eyeColor, eyeReactivity, characterType]);
+  }, [volume, zoomReactivity, manualZoom, bgColor, skinColor, eyeColor, eyeReactivity, characterType]);
 
   return (
     <canvas 

@@ -10,7 +10,7 @@ export const SequenceFace: React.FC<SequenceFaceProps> = ({ volume }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files || []);
+    const files = Array.from(e.target.files || []) as File[];
     if (files.length === 0) return;
 
     const newImages: string[] = [];

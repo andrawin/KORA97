@@ -12,6 +12,7 @@ export default function App() {
   const [showSettings, setShowSettings] = useState(false);
   const [reactivity, setReactivity] = useState(1.0);
   const [zoomReactivity, setZoomReactivity] = useState(0.5);
+  const [manualZoom, setManualZoom] = useState(0.0);
   const [bgColor, setBgColor] = useState('#3399ff');
   const [skinColor, setSkinColor] = useState('#bfa68e');
   const [eyeColor, setEyeColor] = useState('#331a0d');
@@ -132,6 +133,21 @@ export default function App() {
                     min="0.0" max="2.0" step="0.1" 
                     value={zoomReactivity} 
                     onChange={(e) => setZoomReactivity(parseFloat(e.target.value))}
+                    className="w-full accent-cyan-500"
+                  />
+                </div>
+
+                {/* Manual Zoom Slider */}
+                <div>
+                  <label className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3 flex justify-between">
+                    <span>Manual Zoom</span>
+                    <span className="text-cyan-400">{manualZoom.toFixed(1)}</span>
+                  </label>
+                  <input 
+                    type="range" 
+                    min="-2.0" max="2.0" step="0.1" 
+                    value={manualZoom} 
+                    onChange={(e) => setManualZoom(parseFloat(e.target.value))}
                     className="w-full accent-cyan-500"
                   />
                 </div>
@@ -261,7 +277,7 @@ export default function App() {
                     <img 
                       src="https://drive.google.com/thumbnail?id=1OX1Sldz1IMLq1t1krJq4_iTu0gG2u05h&sz=w800" 
                       alt="KORA-97 Logo" 
-                      className="absolute top-8 right-8 w-32 h-auto z-40 opacity-80 pointer-events-none drop-shadow-[0_0_10px_rgba(34,211,238,0.5)]"
+                      className="absolute top-8 right-8 w-48 h-auto z-40 opacity-80 pointer-events-none drop-shadow-[0_0_10px_rgba(34,211,238,0.5)]"
                       onError={(e) => {
                         (e.target as HTMLImageElement).style.display = 'none';
                       }}
@@ -296,6 +312,7 @@ export default function App() {
                         <ShaderFace 
                           volume={effectiveVolume} 
                           zoomReactivity={zoomReactivity} 
+                          manualZoom={manualZoom}
                           bgColor={bgColor}
                           skinColor={skinColor}
                           eyeColor={eyeColor}
