@@ -1,6 +1,6 @@
-# Run and deploy your AI Studio app
+# Run and deploy your KORA-97 
 
-This contains everything you need to run your app locally.
+This contains everything you need to run your web app locally.
 
 ## Run Locally
 
